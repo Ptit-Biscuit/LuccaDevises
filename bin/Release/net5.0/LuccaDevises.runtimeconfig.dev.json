@@ -1,0 +1,8 @@
+{
+  "runtimeOptions": {
+    "additionalProbingPaths": [
+      "C:\\Users\\Ptit-Biscuit\\.dotnet\\store\\|arch|\\|tfm|",
+      "C:\\Users\\Ptit-Biscuit\\.nuget\\packages"
+    ]
+  }
+}
