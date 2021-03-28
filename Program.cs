@@ -6,6 +6,20 @@ using System.Linq;
 
 namespace LuccaDevises
 {
+    public class GraphNode
+    {
+        public readonly string From;
+        public readonly string To;
+        public readonly decimal ExchangeRate;
+
+        public GraphNode(string from, string to, decimal exchangeRate)
+        {
+            From = from;
+            To = to;
+            ExchangeRate = exchangeRate;
+        }
+    }
+
     public static class Program
     {
         public static int Main(string[] args)
@@ -27,7 +41,7 @@ namespace LuccaDevises
             }
 
             Tuple<string, int, string> start;
-            List<Tuple<string, string, decimal>> graph;
+            List<GraphNode> graph;
 
             using (var sr = new StreamReader(filePath))
             {
@@ -89,7 +103,7 @@ namespace LuccaDevises
                 }
 
                 // Undirected graph: currencies as nodes, exchange rate as vertices
-                graph = new List<Tuple<string, string, decimal>>(currenciesLines * 2);
+                graph = new List<GraphNode>(currenciesLines * 2);
 
                 // Process remaining lines
                 string[] line;
@@ -107,14 +121,9 @@ namespace LuccaDevises
                     try
                     {
                         var exchangeRate = decimal.Parse(line[2], CultureInfo.InvariantCulture);
-                        
-                        // TODO: Error if exchange rate is less than 0
-                        
-                        // Add nodes to graph
-                        graph.Add(new Tuple<string, string, decimal>(line[0], line[1],
-                            decimal.Round(exchangeRate, 4)));
-                        graph.Add(new Tuple<string, string, decimal>(line[1], line[0],
-                            decimal.Round(1 / exchangeRate, 4)));
+
+                        graph.Add(new GraphNode(line[0], line[1], decimal.Round(exchangeRate, 4)));
+                        graph.Add(new GraphNode(line[1], line[0], decimal.Round(1 / exchangeRate, 4)));
                     }
                     catch (FormatException fe)
                     {
@@ -126,67 +135,76 @@ namespace LuccaDevises
                 }
             }
 
-            // TODO: Error if given number of exchange rate does not equals last lines of given file
+            Console.Write(ConvertCurrency(graph, start.Item1, start.Item3, start.Item2));
 
-            // Adjacency list
-            var adjacency = new Dictionary<string, List<KeyValuePair<string, decimal>>>();
+            return 0;
+        }
 
-            graph.ForEach(tuple =>
-                adjacency[tuple.Item1] =
-                    graph.Where(tuple1 => tuple.Item1 == tuple1.Item1)
-                        .Select(tuple2 => new KeyValuePair<string, decimal>(tuple2.Item2, tuple2.Item3))
-                        .ToList()
-            );
-            
-            // TODO: Error if start and target currencies are not in adjacency list
+        private static decimal ConvertCurrency(IReadOnlyCollection<GraphNode> graph, string from, string to, int amount)
+        {
+            return decimal.Ceiling(amount * ExchangeRate(graph, ShortestPath(graph, from, to)));
+        }
 
-            // Breadth-first-search algorithm
-            var search = new List<string> { start.Item1 };
-            var paths = new List<string> { start.Item1 };
-            
+        private static decimal ExchangeRate(IReadOnlyCollection<GraphNode> graph, IEnumerable<GraphNode> shortestPath)
+        {
+            return shortestPath
+                .Select(node => graph.FirstOrDefault(node1 => node.From == node1.From && node.To == node1.To)?.ExchangeRate)
+                .Where(arg => arg != null)
+                .Aggregate(decimal.One, (arg1, arg2) => arg1 * arg2.Value);
+        }
+
+        private static IEnumerable<GraphNode> ShortestPath(IReadOnlyCollection<GraphNode> graph, string from, string to)
+        {
+            var predecessors = Predecessors(graph, from, to);
+            var tmp = new GraphNode(to, "", decimal.One);
+            var shortestPath = new List<GraphNode> { tmp };
+
+            while (tmp.From != "")
+            {
+                tmp = predecessors.First(node => node.To == tmp.From);
+                shortestPath.Add(tmp);
+            }
+
+            shortestPath.Reverse();
+
+            return shortestPath;
+        }
+
+        private static List<GraphNode> Predecessors(IReadOnlyCollection<GraphNode> graph, string from, string to)
+        {
+            var adjacency = Adjacency(graph);
+            var search = new List<string> { from };
+            var paths = new List<string> { from };
+
             // Useful to transform to directed graph
-            var predecessors = new List<KeyValuePair<string, string>> { new("", start.Item1) };
+            var predecessors = new List<GraphNode> { new("", from, decimal.One) };
 
             while (search.Count > 0)
             {
                 var rootNode = search.Last();
                 search.Remove(rootNode);
 
-                if (rootNode == start.Item3) break;
+                if (rootNode == to) break;
 
                 // Visit all adjacent nodes that are not already seen
-                adjacency[rootNode].ForEach(pair =>
+                adjacency[rootNode].ForEach(adjacent =>
                 {
-                    if (paths.Contains(pair.Key)) return;
+                    if (paths.Contains(adjacent.To)) return;
 
-                    search.Add(pair.Key);
-                    paths.Add(pair.Key);
-                    predecessors.Add(new KeyValuePair<string, string>(rootNode, pair.Key));
+                    search.Add(adjacent.To);
+                    paths.Add(adjacent.From);
+                    predecessors.Add(adjacent);
                 });
             }
-            
-            // TODO: Error if target currency not in paths
 
-            var tmp = start.Item3;
-            var shortestPath = new List<string> { start.Item3 };
+            return predecessors;
+        }
 
-            while (tmp != "")
-            {
-                tmp = predecessors.First(pair => pair.Value == tmp).Key;
-                shortestPath.Add(tmp);
-            }
-
-            shortestPath.Reverse();
-
-            Console.Write(decimal.Ceiling(start.Item2 * shortestPath
-                .Zip(shortestPath.GetRange(1, shortestPath.Count - 1),
-                    (s, s1) => new KeyValuePair<string, string>(s, s1))
-                .Select(pair =>
-                    graph.FirstOrDefault(tuple => tuple.Item1 == pair.Key && tuple.Item2 == pair.Value)?.Item3)
-                .Where(arg => arg != null)
-                .Aggregate(decimal.One, (arg1, arg2) => arg1 * arg2.Value)));
-
-            return 0;
+        private static Dictionary<string, List<GraphNode>> Adjacency(IReadOnlyCollection<GraphNode> graph)
+        {
+            return graph
+                .ToLookup(node => node.From, node => graph.Where(node1 => node.From == node1.From).ToList())
+                .ToDictionary(grouping => grouping.Key, grouping => grouping.First());
         }
 
         private static void WriteError(string filePath, int errorLine, string message)
