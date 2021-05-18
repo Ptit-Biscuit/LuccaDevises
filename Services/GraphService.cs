@@ -114,18 +114,8 @@ namespace LuccaDevises.Services
             return children;
         }
 
-        public static Dictionary<string, List<GraphNode>> A(IReadOnlyCollection<GraphNode> graph) =>
+        public static Dictionary<string, List<GraphNode>> Adjacency(IReadOnlyCollection<GraphNode> graph) =>
             graph.ToLookup(node => node.From, node => graph.Where(node1 => node.From == node1.From).ToList())
                 .ToDictionary(grouping => grouping.Key, grouping => grouping.First());
-
-        public static Dictionary<string, List<GraphNode>> Adjacency(IReadOnlyCollection<GraphNode> graph)
-        {
-            return graph.Aggregate(
-                new Dictionary<string, List<GraphNode>>(), (acc, graphNode) =>
-                {
-                    acc[graphNode.From] = graph.Where(node1 => graphNode.From == node1.From).ToList();
-                    return acc;
-                });
-        }
     }
 }
